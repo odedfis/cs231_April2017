@@ -29,19 +29,26 @@ def svm_loss_naive(W, X, y, reg):
   for i in xrange(num_train):
     scores = X[i].dot(W)
     correct_class_score = scores[y[i]]
+    diff_count = 0
     for j in xrange(num_classes):
       if j == y[i]:
         continue
       margin = scores[j] - correct_class_score + 1 # note delta = 1
       if margin > 0:
+        diff_count += 1
+        dW[:, j] += X[i] # gradient update for incorrect rows
         loss += margin
+    # gradient update for correct row
+    dW[:, y[i]] += -diff_count * X[i]
 
   # Right now the loss is a sum over all training examples, but we want it
   # to be an average instead so we divide by num_train.
   loss /= num_train
-
+  dW /= num_train
+  dW += reg*W # regularize the weights
   # Add regularization to the loss.
-  loss += reg * np.sum(W * W)
+  loss += 0.5 * reg * np.sum(W * W)
+
 
   #############################################################################
   # TODO:                                                                     #
@@ -59,7 +66,6 @@ def svm_loss_naive(W, X, y, reg):
 def svm_loss_vectorized(W, X, y, reg):
   """
   Structured SVM loss function, vectorized implementation.
-
   Inputs and outputs are the same as svm_loss_naive.
   """
   loss = 0.0
@@ -70,7 +76,29 @@ def svm_loss_vectorized(W, X, y, reg):
   # Implement a vectorized version of the structured SVM loss, storing the    #
   # result in loss.                                                           #
   #############################################################################
-  pass
+  
+  num_train = X.shape[0]
+  delta = 1.0
+
+  ## Semi vectorized implementation from lecture notes
+  # for i in xrange(num_train):
+  #   scores = X[i].dot(W)
+  #   correct_class_score = scores[y[i]]
+  #   # compute the margins for all classes in one vector operation
+  #   margins = np.maximum(0, scores - correct_class_score + delta)
+  #   # on y-th position scores[y] - scores[y] canceled and gave delta. We want
+  #   # to ignore the y-th position and only consider margin on max wrong class
+  #   margins[y[i]] = 0
+  #   loss += np.sum(margins)
+    
+  scores = X.dot(W)
+  correct_class_score = scores[np.arange(num_train), y]
+  margins = np.maximum(0, scores - correct_class_score[:, np.newaxis] + delta)
+  margins[np.arange(num_train), y] = 0
+  loss = np.sum(margins)
+
+  loss /= num_train # get mean
+  loss += 0.5 * reg * np.sum(W * W) # regularization
   #############################################################################
   #                             END OF YOUR CODE                              #
   #############################################################################
@@ -85,7 +113,29 @@ def svm_loss_vectorized(W, X, y, reg):
   # to reuse some of the intermediate values that you used to compute the     #
   # loss.                                                                     #
   #############################################################################
-  pass
+
+
+  # Semi-vectorized version. It's not any faster than the loop version.
+  # num_classes = W.shape[1]
+  # incorrect_counts = np.sum(margins > 0, axis=1)
+  # for k in xrange(num_classes):
+  #   # use the indices of the margin array as a mask.
+  #   wj = np.sum(X[margins[:, k] > 0], axis=0)
+  #   wy = np.sum(-incorrect_counts[y == k][:, np.newaxis] * X[y == k], axis=0)
+  #   dW[:, k] = wj + wy
+
+  # Fully vectorized version. Roughly 10x faster.
+  X_mask = np.zeros(margins.shape)
+  # column maps to class, row maps to sample; a value v in X_mask[i, j]
+  # adds a row sample i to column class j with multiple of v
+  X_mask[margins > 0] = 1
+  # for each sample, find the total number of classes where margin > 0
+  incorrect_counts = np.sum(X_mask, axis=1)
+  X_mask[np.arange(num_train), y] = -incorrect_counts
+  dW = X.T.dot(X_mask)
+
+  dW /= num_train # average out weights
+  dW += reg*W # regularize the weights
   #############################################################################
   #                             END OF YOUR CODE                              #
   #############################################################################
