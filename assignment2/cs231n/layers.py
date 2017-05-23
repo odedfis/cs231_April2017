@@ -431,7 +431,32 @@ def conv_forward_naive(x, w, b, conv_param):
     # TODO: Implement the convolutional forward pass.                         #
     # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pass
+    pad = conv_param['pad']
+    stride = conv_param['stride']
+    F, C, HH, WW = w.shape
+    N, C, H, W = x.shape
+    Hp = int(1 + (H + 2 * pad - HH) / stride)
+    Wp = int(1 + (W + 2 * pad - WW) / stride)
+
+    out = np.zeros((N, F, Hp, Wp))
+
+    # Add padding around each 2D image
+    padded = np.pad(x, [(0,0), (0,0), (pad,pad), (pad,pad)], 'constant')
+
+    for i in np.arange(N): # ith example
+      for j in np.arange(F): # jth filter
+         # Convolve this filter over windows
+        for k in np.arange(Hp):
+          hs = k * stride
+          for l in np.arange(Wp):
+            ws = l * stride
+            # Window we want to apply the respective jth filter over (C, HH, WW)
+            window = padded[i, :, hs:hs+HH, ws:ws+WW]
+
+            # Convolve
+            out[i, j, k, l] = np.sum(window*w[j]) + b[j]
+
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -456,7 +481,44 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
-    pass
+    x, w, b, conv_param = cache
+    pad = conv_param['pad']
+    stride = conv_param['stride']
+    F, C, HH, WW = w.shape
+    N, C, H, W = x.shape
+    Hp = int(1 + (H + 2 * pad - HH) / stride)
+    Wp = int(1 + (W + 2 * pad - WW) / stride)
+
+    dx = np.zeros_like(x)
+    dw = np.zeros_like(w)
+    db = np.zeros_like(b)
+
+    # Add padding around each 2D image (and respective gradient)
+    # There may be a prettier way to do this but I can't think of any nice way at
+    # least. You want to contribute to the boundary sums and in some cases the
+    # only way to do that is by writing into the padding. I'm sure some very nasty
+    # indexing trick will do; with lots of floors and ceils.
+    padded = np.pad(x, [(0,0), (0,0), (pad,pad), (pad,pad)], 'constant')
+    padded_dx = np.pad(dx, [(0,0), (0,0), (pad,pad), (pad,pad)], 'constant')
+
+    for i in np.arange(N): # ith example
+      for j in np.arange(F): # jth filter
+      # Convolve this filter over windows
+        for k in np.arange(Hp):
+          hs = k * stride
+          for l in np.arange(Wp):
+            ws = l * stride
+
+            # Window we applies the respective jth filter over (C, HH, WW)
+            window = padded[i, :, hs:hs+HH, ws:ws+WW]
+
+            # Compute gradient of out[i, j, k, l] = np.sum(window*w[j]) + b[j]
+            db[j] += dout[i, j, k, l]
+            dw[j] += window*dout[i, j, k, l]
+            padded_dx[i, :, hs:hs+HH, ws:ws+WW] += w[j] * dout[i, j, k, l]
+
+    # "Unpad"
+    dx = padded_dx[:, :, pad:pad+H, pad:pad+W]
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -482,7 +544,26 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # TODO: Implement the max pooling forward pass                            #
     ###########################################################################
-    pass
+    HH = pool_param['pool_height']
+    WW = pool_param['pool_width']
+    stride = pool_param['stride']
+    N, C, H, W = x.shape
+    Hp = int(1 + (H - HH) / stride)
+    Wp = int(1 + (W - WW) / stride)
+
+    out = np.zeros((N, C, Hp, Wp))
+
+    for i in np.arange(N):
+    # Need this; apparently we are required to max separately over each channel
+      for j in np.arange(C):
+        for k in np.arange(Hp):
+          hs = k * stride
+          for l in np.arange(Wp):
+            ws = l * stride
+
+            # Window (C, HH, WW)
+            window = x[i, j, hs:hs+HH, ws:ws+WW]
+            out[i, j, k, l] = np.max(window)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -505,7 +586,29 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the max pooling backward pass                           #
     ###########################################################################
-    pass
+    x, pool_param = cache
+    HH = pool_param['pool_height']
+    WW = pool_param['pool_width']
+    stride = pool_param['stride']
+    N, C, H, W = x.shape
+    Hp = int(1 + (H - HH) / stride)
+    Wp = int(1 + (W - WW) / stride)
+
+    dx = np.zeros_like(x)
+
+    for i in np.arange(N):
+      for j in np.arange(C):
+        for k in np.arange(Hp):
+          hs = k * stride
+          for l in np.arange(Wp):
+            ws = l * stride
+
+            # Window (C, HH, WW)
+            window = x[i, j, hs:hs+HH, ws:ws+WW]
+            m = np.max(window)
+
+            # Gradient of max is indicator
+            dx[i, j, hs:hs+HH, ws:ws+WW] += (window == m) * dout[i, j, k, l]
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
